@@ -1,20 +1,15 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
   labels:
     service: meta-fetcher-api
   name: meta-fetcher-api
   namespace: default
 spec:
-  serviceName: "meta-fetcher-api"
   replicas: 1
   selector:
     matchLabels:
       service: meta-fetcher-api
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      partition: 0
   template:
     metadata:
       labels:
