@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  labels:
+    service: meta-fetcher-api
+  name: meta-fetcher-api
+  namespace: default
+spec:
+  serviceName: "meta-fetcher-api"
+  replicas: 1
+  selector:
+    matchLabels:
+      service: meta-fetcher-api
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  template:
+    metadata:
+      labels:
+        service: meta-fetcher-api
+    spec:
+      containers:
+        - image: maksim1111/meta-fetcher-api:latest
+          name: meta-fetcher-api
+          imagePullPolicy: IfNotPresent
+          command: [ "/app/main" ]
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+          volumeMounts:
+            - mountPath: /app/storage
+              subPath: storage
+              name: meta-fetcher-api-data
+            - mountPath: /app/config.yml
+              name: meta-fetcher-api-config
+              subPath: config.yml
+          env:
+            - name: CONFIG_FILE_PATH
+              value: /app/config.yml
+          readinessProbe:
+            exec:
+              command: [ "sqlite3", "/app/storage/db.sqlite", ".tables" ]
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 2
+      volumes:
+        - name: meta-fetcher-api-config
+          secret:
+            secretName: meta-fetcher-api-secrets
+  volumeClaimTemplates:
+    - metadata:
+        name: meta-fetcher-api-data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
+        storageClassName: "do-block-storage"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    service: meta-fetcher-api
+  name: meta-fetcher-api
+  namespace: default
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8080
+      targetPort: 8080
+  selector:
+    service: meta-fetcher-api
