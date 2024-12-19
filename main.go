@@ -61,7 +61,7 @@ func fetchWithChromedp(url string) (html string, screenshot []byte, err error) {
 
 	tasks := []chromedp.Action{
 		chromedp.Navigate(url),
-		chromedp.Sleep(1 * time.Second),
+		chromedp.WaitReady("html"),
 		chromedp.InnerHTML("html", &htmlContent),
 	}
 
