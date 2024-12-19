@@ -10,43 +10,76 @@ import (
 	"image/png"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
 
 var (
-	timeout = 120 * time.Second
+	timeout = 60 * time.Second
+	out     = "screenshot.png"
+	debug   = parseDebugEnv()
 )
 
-// fetchWithChromedp fetches the HTML content and captures a screenshot
+func parseDebugEnv() bool {
+	val, exists := os.LookupEnv("DEBUG")
+	if !exists {
+		return false
+	}
+
+	parsed, err := strconv.ParseBool(val)
+	if err != nil {
+		log.Printf("Invalid DEBUG value: %s, defaulting to false", val)
+		return false
+	}
+
+	return parsed
+}
+
 func fetchWithChromedp(url string) (html string, screenshot []byte, err error) {
-	ctx, cancel := chromedp.NewContext(context.Background())
+	allocatorCtx, cancel := chromedp.NewExecAllocator(context.Background(),
+		chromedp.Flag("headless", true),
+		chromedp.Flag("disable-gpu", true),
+		chromedp.Flag("no-sandbox", true),
+		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"),
+	)
+	defer cancel()
+
+	ctx, cancel := chromedp.NewContext(allocatorCtx)
 	defer cancel()
 
 	ctx, cancel = context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	var buf []byte
-	err = chromedp.Run(ctx,
+	var htmlContent string
+
+	tasks := []chromedp.Action{
 		chromedp.Navigate(url),
-		chromedp.WaitReady("meta[property]", chromedp.ByQueryAll),
-		chromedp.InnerHTML("html", &html),
-		chromedp.CaptureScreenshot(&buf),
-	)
+		chromedp.Sleep(5 * time.Second),
+		chromedp.InnerHTML("html", &htmlContent),
+	}
+
+	if debug {
+		tasks = append(tasks, chromedp.CaptureScreenshot(&buf))
+	}
+
+	err = chromedp.Run(ctx, tasks...)
 	if err != nil {
 		return "", nil, fmt.Errorf("chromedp error: %w", err)
 	}
 
-	_, err = png.Decode(bytes.NewReader(buf))
-	if err != nil {
-		return "", nil, fmt.Errorf("failed to decode screenshot: %w", err)
+	if debug {
+		return htmlContent, buf, nil
 	}
 
-	return html, buf, nil
+	return htmlContent, nil, nil
 }
 
 // fetchProductMeta extracts metadata from the HTML
-func fetchProductMeta(data string) (map[string]string, error) {
+func fetchProductMeta(data string) (map[string]interface{}, error) {
 	reader := strings.NewReader(data)
 	doc, err := goquery.NewDocumentFromReader(reader)
 	if err != nil {
@@ -67,10 +100,20 @@ func fetchProductMeta(data string) (map[string]string, error) {
 		}
 	})
 
-	return meta, nil
+	var response = make(map[string]interface{})
+	doc.Find("title").Each(func(i int, s *goquery.Selection) {
+		response["title"] = s.Text()
+	})
+
+	doc.Find("h1").Each(func(i int, s *goquery.Selection) {
+		response["h1"] = s.Text()
+	})
+
+	response["meta"] = meta
+
+	return response, nil
 }
 
-// handleScreenshot handles the /screenshot API endpoint
 func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 	url := r.URL.Query().Get("url")
 	if url == "" {
@@ -78,10 +121,22 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	html, _, err := fetchWithChromedp(url)
+	html, buf, err := fetchWithChromedp(url)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to fetch page: %v", err), http.StatusInternalServerError)
 		return
+	}
+
+	if debug {
+		if _, err := png.Decode(bytes.NewReader(buf)); err != nil {
+			http.Error(w, fmt.Sprintf("failed to decode screenshot: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		if err := os.WriteFile(out, buf, 0o644); err != nil {
+			http.Error(w, fmt.Sprintf("failed to write screenshot to file: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	meta, err := fetchProductMeta(html)
@@ -89,24 +144,13 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to extract metadata: %v", err), http.StatusInternalServerError)
 		return
 	}
-	//
-	//// Save the screenshot temporarily
-	//tempFile, err := os.CreateTemp("", "screenshot-*.png")
-	//if err != nil {
-	//	http.Error(w, "failed to create temp file", http.StatusInternalServerError)
-	//	return
-	//}
-	//defer tempFile.Close()
-	//
-	//_, err = tempFile.Write(screenshot)
-	//if err != nil {
-	//	http.Error(w, "failed to write screenshot to file", http.StatusInternalServerError)
-	//	return
-	//}
 
-	// Build the response
 	response := map[string]interface{}{
 		"metadata": meta,
+	}
+
+	if debug {
+		response["screenshot"] = out
 	}
 
 	w.Header().Set("Content-Type", "application/json")
