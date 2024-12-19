@@ -45,6 +45,8 @@ func fetchWithChromedp(url string) (html string, screenshot []byte, err error) {
 		chromedp.Flag("disable-dev-shm-usage", true),
 		chromedp.Flag("blink-settings", "imagesEnabled=false"),
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"),
+		chromedp.Flag("disable-blink-features", "AutomationControlled"),
+		chromedp.Flag("disable-automation", true),
 	)
 	defer cancel()
 
@@ -59,7 +61,7 @@ func fetchWithChromedp(url string) (html string, screenshot []byte, err error) {
 
 	tasks := []chromedp.Action{
 		chromedp.Navigate(url),
-		chromedp.Sleep(5 * time.Second),
+		chromedp.Sleep(1 * time.Second),
 		chromedp.InnerHTML("html", &htmlContent),
 	}
 
