@@ -105,10 +105,6 @@ func fetchProductMeta(data string) (map[string]interface{}, error) {
 		response["title"] = s.Text()
 	})
 
-	doc.Find("h1").Each(func(i int, s *goquery.Selection) {
-		response["h1"] = s.Text()
-	})
-
 	response["meta"] = meta
 
 	return response, nil
