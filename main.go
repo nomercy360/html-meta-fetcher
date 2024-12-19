@@ -43,6 +43,7 @@ func fetchWithChromedp(url string) (html string, screenshot []byte, err error) {
 		chromedp.Flag("disable-gpu", true),
 		chromedp.Flag("no-sandbox", true),
 		chromedp.Flag("disable-dev-shm-usage", true),
+		chromedp.Flag("blink-settings", "imagesEnabled=false"),
 		chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"),
 	)
 	defer cancel()
@@ -135,22 +136,18 @@ func handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	meta, err := fetchProductMeta(html)
+	resp, err := fetchProductMeta(html)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to extract metadata: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	response := map[string]interface{}{
-		"metadata": meta,
-	}
-
 	if debug {
-		response["screenshot"] = out
+		resp["screenshot"] = out
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}
 }
